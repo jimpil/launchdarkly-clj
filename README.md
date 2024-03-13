@@ -44,10 +44,10 @@ Here is how you do that depending on the type (Boolean/String/Long/Double/Map):
 
 ```clj
 (ld/bool-flag   ld-client ld-ctx "some-ctx-key" false)
-(ld/string-flag ld-client ld-ctx "some-ctx-key" false)
-(ld/int-flag    ld-client ld-ctx "some-ctx-key" false)
-(ld/double-flag ld-client ld-ctx "some-ctx-key" false)
-(ld/json-flag   ld-client ld-ctx "some-ctx-key" false) ;; returns map
+(ld/string-flag ld-client ld-ctx "some-ctx-key" "default")
+(ld/int-flag    ld-client ld-ctx "some-ctx-key" 0)
+(ld/double-flag ld-client ld-ctx "some-ctx-key" 0.0)
+(ld/json-flag   ld-client ld-ctx "some-ctx-key" nil) ;; returns map
 ```
 After retrieving a flag, the assumption/expectation is that you will use it in some 
 sort of conditional, in order to differentiate what will happen (depending on the flag value).
