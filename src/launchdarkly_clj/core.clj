@@ -27,7 +27,7 @@
   (-> v .toJsonString json/read-value))
 
 (defn homogenous-value->map
-  "Converts a flat/homogenous `LDValue` into a map.
+  "Converts a flat/homogenous `LDValue` into a  map.
    May be faster than `value->map`, as there is no JSON involved."
   [^LDValue ldv]
   (let [ld-vs (.values ldv)
