@@ -1,15 +1,20 @@
 (ns launchdarkly-clj.core
   (:require [launchdarkly-clj.global :as global]
             [jsonista.core :as json])
-  (:import (com.launchdarkly.sdk ContextKind LDContext LDValue LDValue$Convert LDValueType)
-           (com.launchdarkly.sdk.server FlagsStateOption LDClient)))
+  (:import (com.launchdarkly.sdk ContextKind LDContext LDValue LDValue$Convert)
+           (com.launchdarkly.sdk.server FlagsStateOption LDClient)
+           (com.launchdarkly.sdk.json LDJackson)))
 
 ;; LDValue <-> map
+
+(defonce ld-obj-mapper
+  (doto json/default-object-mapper
+    (.registerModule (LDJackson/module))))
 
 (defn map->value
   "Converts an arbitrary map into a `LDValue` via its JSON representation."
   ^LDValue [m]
-  (-> m json/write-value-as-string LDValue/parse))
+  (-> m (json/write-value-as-string ld-obj-mapper) LDValue/parse))
 
 (defn homogenous-map->value
   "Converts a flat/homogenous map (String => Boolean/Long/Double/String) into an `LDValue`.
@@ -24,7 +29,7 @@
 (defn value->map
   "Converts an arbitrary `LDValue` into a map via its JSON representation."
   [^LDValue v]
-  (-> v .toJsonString json/read-value))
+  (-> v .toJsonString (json/read-value ld-obj-mapper)))
 
 (defn homogenous-value->map
   "Converts a flat/homogenous `LDValue` into a  map.
