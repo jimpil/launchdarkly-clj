@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [launchdarkly-clj.core :as ld]))
 
-(deftest a-test
+(deftest flag-accessors-tests
   (testing "Boolean flag"
     (with-redefs [ld/bool-flag (constantly true)]
       (is
@@ -31,3 +31,15 @@
             "foo"     :foo
             "bar"     :bar
             "default" :absent))))))
+
+(deftest  ldvalue-conversion-tests
+  (testing "Context of the test assertions"
+    (let [homogenous-sample {"foo" true "bar" false}
+          nested-sample     {"foo" [1 2 3] "bar" {"baz" true "zab" 5}}
+          homogenous-value  (ld/homogenous-map->value :bool homogenous-sample)
+          nested-value      (ld/map->value nested-sample)]
+      (is (= homogenous-sample (ld/homogenous-value->map homogenous-value)))
+      (is (= nested-sample     (ld/value->map nested-value))))
+    
+    )
+  ) 

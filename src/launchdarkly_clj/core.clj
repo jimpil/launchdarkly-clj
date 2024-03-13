@@ -1,22 +1,47 @@
 (ns launchdarkly-clj.core
   (:require [launchdarkly-clj.global :as global]
             [jsonista.core :as json])
-  (:import (com.launchdarkly.sdk ContextKind LDContext LDValue)
+  (:import (com.launchdarkly.sdk ContextKind LDContext LDValue LDValue$Convert LDValueType)
            (com.launchdarkly.sdk.server FlagsStateOption LDClient)))
 
-;; LDValue <-> map (via JSON)
+;; LDValue <-> map
 
 (defn map->value
+  "Converts an arbitrary map into a `LDValue` via its JSON representation."
   ^LDValue [m]
   (-> m json/write-value-as-string LDValue/parse))
 
+(defn homogenous-map->value
+  "Converts a flat/homogenous map (String => Boolean/Long/Double/String) into an `LDValue`.
+   May be faster than `map->value`, as there is no JSON involved."
+  ^LDValue [t ^java.util.Map m]
+  (case t
+    :bool   (.objectFrom LDValue$Convert/Boolean m)
+    :int    (.objectFrom LDValue$Convert/Long m)
+    :double (.objectFrom LDValue$Convert/Double m)
+    :string (.objectFrom LDValue$Convert/String m)))
+
 (defn value->map
+  "Converts an arbitrary `LDValue` into a map via its JSON representation."
   [^LDValue v]
   (-> v .toJsonString json/read-value))
+
+(defn homogenous-value->map
+  "Converts a flat/homogenous `LDValue` into a map.
+   May be faster than `value->map`, as there is no JSON involved."
+  [^LDValue ldv]
+  (let [ld-vs (.values ldv)
+        t     (.getType ^LDValue (first ld-vs))
+        f     (case (.ordinal t)
+                1 (fn [^LDValue v] (.booleanValue v))
+                2 (fn [^LDValue v] (if (.isInt v) (.longValue v) (.doubleValue v)))
+                3 (fn [^LDValue v] (.stringValue v)))]
+    (zipmap (.keys ldv) (map f ld-vs))))
+
 ;-------------------------------------------------
 ;; Top-level flag accessors 
 
-(defn- variation
+(defn- variation*
   [t
    ^LDClient client
    ^LDContext ctx
@@ -30,24 +55,34 @@
     :json   (value->map (.jsonValueVariation client k ctx not-found))))
 
 (defn bool-flag
-  [client ctx k not-found]
-  (variation :bool client ctx k not-found))
+  ([ctx k not-found]
+   (some-> (global/client) (bool-flag ctx k not-found)))
+  ([client ctx k not-found]
+   (variation* :bool client ctx k not-found)))
 
 (defn int-flag
-  [client ctx k not-found]
-  (variation :int client ctx k not-found))
+  ([ctx k not-found]
+   (some-> (global/client) (int-flag ctx k not-found)))
+  ([client ctx k not-found]
+   (variation* :int client ctx k not-found)))
 
 (defn double-flag
-  [client ctx k not-found]
-  (variation :double client ctx k not-found))
+  ([ctx k not-found]
+   (some-> (global/client) (double-flag ctx k not-found)))
+  ([client ctx k not-found]
+   (variation* :double client ctx k not-found)))
 
 (defn string-flag
-  [client ctx k not-found]
-  (variation :string client ctx k not-found))
+  ([ctx k not-found]
+   (some-> (global/client) (string-flag ctx k not-found)))
+  ([client ctx k not-found]
+   (variation* :string client ctx k not-found)))
 
 (defn json-flag
-  [client ctx k not-found]
-  (variation :json client ctx k not-found))
+  ([ctx k not-found]
+   (some-> (global/client) (json-flag ctx k not-found)))
+  ([client ctx k not-found]
+   (variation* :json client ctx k not-found)))
 ;------------------------------------------------
 ;; Client creation/shutdown
 
@@ -58,7 +93,7 @@
   (LDClient. sdk-key))
 
 (defn shutdown-client
-  ([] 
+  ([]
    (some-> (global/client) shutdown-client))
   ([^LDClient client]
    (.close client)))
@@ -66,10 +101,14 @@
 ;; Context(Kind) creation
 
 (defn context-kind
+  "Returns a new `ContextKind` instance given the provided key."
   ^ContextKind [^String k]
   (ContextKind/of k))
 
 (defn context
+  "Returns a new `LDContext` instance given the provided
+   <ctx-kind> (defaults to 'user'), <ctx-name> (optional),
+   and <ctx-key> (mandatory)."
   (^LDContext [ctx-key]
    (context nil ctx-key))
   (^LDContext [ctx-name ctx-key]
@@ -80,19 +119,24 @@
      true     .build)))
 
 (defn multi-context
+  "Returns an `LDContext` instance which wraps the 
+   provided <ctxs> instances."
   ^LDContext [& ctxs]
   (LDContext/createMulti (into-array LDContext ctxs)))
 
 (defn all-context-flags
-  [^LDClient client
-   ^LDContext ctx]
-  (->> (into-array FlagsStateOption [])
-       (.allFlagsState client ctx)
-       (.toValuesMap)
-       (into {}
-             (map
-              (fn [[k v]]
-                [k (value->map v)])))))
+  "Returns a map of all the flags in the given <ctx>."
+  ([ctx]
+   (some-> (global/client) (all-context-flags ctx)))
+  ([^LDClient client
+    ^LDContext ctx]
+   (->> (into-array FlagsStateOption [])
+        (.allFlagsState client ctx)
+        (.toValuesMap)
+        (into {}
+              (map
+               (fn [[k v]]
+                 [k (value->map v)]))))))
 ;-------------------------------------------------------
 ;; Helper macros
 
@@ -101,9 +145,9 @@
    whether feature <flag-key> is on VS off, within the given context <ctx>."
   [client ctx [flag-key not-found] on-expr off-expr]
   `(let [ctx-provided# ~ctx
-         ctx# (cond-> ctx-provided# (string? ctx-provided#) context)
+         ctx#    (cond-> ctx-provided# (string? ctx-provided#) context)
          client# (or ~client (global/client))
-         on?# (bool-flag client# ctx# ~flag-key (or ~not-found false))]
+         on?#    (bool-flag client# ctx# ~flag-key (or ~not-found false))]
      (if on?# ~on-expr ~off-expr)))
 
 (defmacro with-string-flag
@@ -113,13 +157,11 @@
    <not-found> (defaults to 'default'), or let this function throw."
   [client ctx [flag-key not-found] & outcomes]
   `(let [ctx-provided# ~ctx
-         ctx#  (cond-> ctx-provided# (string? ctx-provided#) context)
+         ctx#    (cond-> ctx-provided# (string? ctx-provided#) context)
          client# (or ~client (global/client))
-         flag# (string-flag client# ctx# ~flag-key (or ~not-found "default"))
-         outcomes# ~(into {}
-                          (map (fn [[k# expr#]]
-                                 [k# `(fn [] ~expr#)]))
-                          (partition 2 outcomes))]
+         flag#   (string-flag client# ctx# ~flag-key (or ~not-found "default"))
+         outcomes# ~(->> (partition 2 outcomes)
+                         (into {} (map (fn [[k# expr#]] [k# `(fn [] ~expr#)]))))]
      (if-some [f# (get outcomes# flag#)]
        (f#)
        (throw
