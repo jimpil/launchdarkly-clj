@@ -11,14 +11,14 @@
   (doto json/default-object-mapper
     (.registerModule (LDJackson/module))))
 
-(defn map->value
-  "Converts an arbitrary map into a `LDValue` via its JSON representation."
-  ^LDValue [m]
-  (-> m (json/write-value-as-string ld-obj-mapper) LDValue/parse))
+(defn clj->value
+  "Converts arbitrary clojure data into a `LDValue` via its JSON representation."
+  ^LDValue [x]
+  (-> x (json/write-value-as-string ld-obj-mapper) LDValue/parse))
 
 (defn homogenous-map->value
-  "Converts a flat/homogenous map (String => Boolean/Long/Double/String) into an `LDValue`.
-   May be faster than `map->value`, as there is no JSON involved."
+  "Converts a flat/homogenous map (String => Boolean/Long/Double/String) 
+   into an `LDValue`. May be faster than `map->value`, as there is no JSON involved."
   ^LDValue [t ^java.util.Map m]
   (case t
     :bool   (.objectFrom LDValue$Convert/Boolean m)
@@ -26,8 +26,8 @@
     :double (.objectFrom LDValue$Convert/Double m)
     :string (.objectFrom LDValue$Convert/String m)))
 
-(defn value->map
-  "Converts an arbitrary `LDValue` into a map via its JSON representation."
+(defn value->clj
+  "Converts an arbitrary `LDValue` into clojure data via its JSON representation."
   [^LDValue v]
   (-> v .toJsonString (json/read-value ld-obj-mapper)))
 
@@ -57,7 +57,7 @@
     :int    (.intVariation    client k ctx not-found)
     :double (.doubleVariation client k ctx not-found)
     :string (.stringVariation client k ctx not-found)
-    :json   (value->map (.jsonValueVariation client k ctx not-found))))
+    :json   (value->clj (.jsonValueVariation client k ctx not-found))))
 
 (defn bool-flag
   ([ctx k not-found]
@@ -93,9 +93,14 @@
 
 (defn client
   "Returns a new `LDClient` instance, which is exepected to live as long as 
-   your application (and reused throughout - i.e. don't create multiple clients)."
-  ^LDClient [^String sdk-key]
-  (LDClient. sdk-key))
+   your application (and reused throughout - i.e. don't create multiple clients).
+   The <sdk-key> can be either a symbol (implying an environment variable), or 
+   a String (implying an actual key)."
+  ^LDClient [sdk-key]
+  (let [^String sdk-key (cond-> sdk-key
+                          (symbol? sdk-key)
+                          (System/getenv))]
+    (LDClient. sdk-key)))
 
 (defn shutdown-client
   ([]
@@ -141,7 +146,7 @@
         (into {}
               (map
                (fn [[k v]]
-                 [k (value->map v)]))))))
+                 [k (value->clj v)]))))))
 ;-------------------------------------------------------
 ;; Helper macros
 
@@ -153,7 +158,9 @@
          ctx#    (cond-> ctx-provided# (string? ctx-provided#) context)
          client# (or ~client (global/client))
          on?#    (bool-flag client# ctx# ~flag-key (or ~not-found false))]
-     (if on?# ~on-expr ~off-expr)))
+     (case ^boolean on?#
+       true  ~on-expr
+       false ~off-expr)))
 
 (defmacro with-string-flag
   "Emits code which invokes one of the (no-arg) functions in the <outcomes> map,
@@ -166,7 +173,9 @@
          client# (or ~client (global/client))
          flag#   (string-flag client# ctx# ~flag-key (or ~not-found "default"))
          outcomes# ~(->> (partition 2 outcomes)
-                         (into {} (map (fn [[k# expr#]] [k# `(fn [] ~expr#)]))))]
+                         (into {}
+                               (map (fn [[k# expr#]]
+                                      [k# `(fn ~(symbol (str "_handle-ld-flag-" k#)) [] ~expr#)]))))]
      (if-some [f# (get outcomes# flag#)]
        (f#)
        (throw

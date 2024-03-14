@@ -37,9 +37,9 @@
     (let [homogenous-sample {"foo" true "bar" false}
           nested-sample     {"foo" [1 2 3] "bar" {"baz" true "zab" 5}}
           homogenous-value  (ld/homogenous-map->value :bool homogenous-sample)
-          nested-value      (ld/map->value nested-sample)]
+          nested-value      (ld/clj->value nested-sample)]
       (is (= homogenous-sample (ld/homogenous-value->map homogenous-value)))
-      (is (= nested-sample     (ld/value->map nested-value))))
+      (is (= nested-sample     (ld/value->clj nested-value))))
     
     )
   ) 
