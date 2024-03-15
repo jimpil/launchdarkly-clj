@@ -69,3 +69,4 @@ clj꞉launchdarkly-clj.core-test꞉> 
 clj꞉launchdarkly-clj.core-test꞉> 
 {"bar" false, "foo" 1, "baz" ["a" "b" "c"]}
 clj꞉launchdarkly-clj.core-test꞉> 
+; nREPL Connection was closed

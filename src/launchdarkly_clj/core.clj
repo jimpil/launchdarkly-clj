@@ -158,7 +158,7 @@
          ctx#    (cond-> ctx-provided# (string? ctx-provided#) context)
          client# (or ~client (global/client))
          on?#    (bool-flag client# ctx# ~flag-key (or ~not-found false))]
-     (case ^boolean on?#
+     (case on?#
        true  ~on-expr
        false ~off-expr)))
 
